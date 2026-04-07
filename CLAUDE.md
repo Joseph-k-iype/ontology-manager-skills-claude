@@ -70,6 +70,10 @@ eom/
 | State (client) | Zustand | 4.x |
 | Styling | Tailwind CSS | 3.x |
 | Editor | Monaco Editor | 0.45.x |
+| Animation | Framer Motion | 11.x |
+| Advanced animation | GSAP | 3.x |
+| Icons | Lucide React | latest |
+| Charts | Recharts | 2.x |
 | Package manager (py) | uv | 0.4.x |
 | Package manager (js) | pnpm | 9.x |
 

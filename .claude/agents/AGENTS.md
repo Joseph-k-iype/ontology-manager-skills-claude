@@ -462,3 +462,139 @@ wrap FalkorDB calls so they don't block the event loop:
 import asyncio
 result = await asyncio.to_thread(graph.query, cypher, params)
 ```
+
+---
+
+## Agent 9 — Space Service
+
+**File:** `apps/api/services/space_service.py`
+
+**Responsibility:** CRUD for Spaces and Folders, permission inheritance bootstrapping.
+
+### Input / Output Contract
+
+```python
+# Inputs
+create_space(owner_id: str, name: str, visibility: SpaceVisibility, description: str | None) -> Space
+get_space(space_id: str) -> Space
+list_spaces(owner_id: str, limit: int, offset: int) -> list[Space]
+update_space(space_id: str, data: SpaceUpdate) -> Space
+delete_space(space_id: str) -> None
+
+create_folder(space_id: str, name: str, parent_folder_id: str | None) -> Folder
+list_folders(space_id: str) -> list[Folder]
+delete_folder(folder_id: str) -> None
+```
+
+### Execution Pipeline
+
+1. **OPA check** — `check_access(user_id, action, "SPACE"|"FOLDER", resource_id)`
+2. **FalkorDB write** — `CREATE (:OntMeta_Space {...})` or `(:OntMeta_Folder {...})`
+3. **Relationship** — `(Folder)-[:BELONGS_TO]->(Space)` or `(Folder)-[:BELONGS_TO]->(ParentFolder)`
+4. **Bootstrap permissions** — owner gets READ/WRITE/EDIT/DELETE via `PermissionService`
+5. **Return** Pydantic model
+
+### FalkorDB Nodes
+
+```cypher
+-- Space
+CREATE (:OntMeta_Space {
+  id: $id, name: $name, description: $description,
+  visibility: $visibility, owner_id: $owner_id,
+  created_at: $ts, updated_at: $ts
+})
+
+-- Folder
+CREATE (:OntMeta_Folder {
+  id: $id, space_id: $space_id,
+  parent_folder_id: $parent_folder_id,
+  name: $name, created_at: $ts
+})
+MATCH (f:OntMeta_Folder {id: $id}), (s:OntMeta_Space {id: $space_id})
+CREATE (f)-[:BELONGS_TO]->(s)
+```
+
+### Allowed Dependencies
+
+| May call | Must not call |
+|---|---|
+| OPAService | ActionService |
+| FalkorDB (via `execute_cypher`) | GitService |
+| PermissionService (bootstrap) | EmbeddingService |
+
+---
+
+## Agent 10 — Ontology Orchestration Service
+
+**File:** `apps/api/services/ontology_service.py`
+
+**Responsibility:** Orchestrate ObjectTypes, Properties, and Relationships within an Ontology. Manages the compile → FalkorDB meta-graph publish pipeline.
+
+### Input / Output Contract
+
+```python
+create_ontology(folder_id: str, name: str, description: str | None) -> Ontology
+publish_ontology(ontology_id: str) -> Ontology
+get_ontology(ontology_id: str) -> Ontology
+list_ontologies(folder_id: str) -> list[Ontology]
+
+create_object_type(ontology_id: str, data: ObjectTypeCreate) -> ObjectType
+create_property(object_type_id: str, data: PropertyCreate) -> Property
+create_relationship(ontology_id: str, data: RelationshipCreate) -> Relationship
+```
+
+### Execution Pipeline (publish)
+
+1. **OPA check** — `check_schema_change(change_type="PUBLISH", ontology_id=...)`
+2. **Load ontology** — fetch all ObjectTypes + Properties + Relationships from meta-graph
+3. **SchemaService.compile()** — validate naming, generate FalkorDB DDL + ES mappings
+4. **FalkorDB DDL** — create label indexes on data graph `eom_{spaceId}_data`
+5. **Elasticsearch** — create versioned index `eom_{spaceId}_{apiName}_v{N}` with alias
+6. **Update status** — `SET o.status = "PUBLISHED", o.version = $version`
+7. **Return** updated Ontology
+
+### FalkorDB Meta-Graph Nodes
+
+```cypher
+-- ObjectType
+CREATE (:OntMeta_ObjectType {
+  id: $id, ontology_id: $ontology_id,
+  api_name: $api_name, display_name: $display_name,
+  primary_key: $primary_key,
+  is_skos_concept: $is_skos_concept,
+  is_skos_concept_scheme: $is_skos_concept_scheme,
+  created_at: $ts
+})
+MATCH (ot:OntMeta_ObjectType {id: $id}), (o:OntMeta_Ontology {id: $ontology_id})
+CREATE (ot)-[:BELONGS_TO]->(o)
+
+-- Property
+CREATE (:OntMeta_Property {
+  id: $id, object_type_id: $object_type_id,
+  api_name: $api_name, data_type: $data_type,
+  required: $required, skos_mapping: $skos_mapping,
+  created_at: $ts
+})
+MATCH (p:OntMeta_Property {id: $id}), (ot:OntMeta_ObjectType {id: $object_type_id})
+CREATE (p)-[:BELONGS_TO]->(ot)
+
+-- Relationship
+CREATE (:OntMeta_Relationship {
+  id: $id, ontology_id: $ontology_id,
+  api_name: $api_name, cardinality: $cardinality,
+  created_at: $ts
+})
+MATCH (r:OntMeta_Relationship {id: $id}),
+      (src:OntMeta_ObjectType {id: $source_object_type_id}),
+      (tgt:OntMeta_ObjectType {id: $target_object_type_id})
+CREATE (r)-[:SOURCE]->(src), (r)-[:TARGET]->(tgt)
+```
+
+### Allowed Dependencies
+
+| May call | Must not call |
+|---|---|
+| OPAService | ActionService (direct write) |
+| SchemaService | GitService |
+| FalkorDB (via `execute_cypher`) | EmbeddingService (synchronously) |
+| Elasticsearch (via `es_client`) | HealthAgent |

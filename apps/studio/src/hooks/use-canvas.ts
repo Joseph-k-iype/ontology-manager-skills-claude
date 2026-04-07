@@ -27,7 +27,6 @@ export const relationshipsKey = (ontologyId: string) =>
 /** Load ontology canvas data (nodes + edges) from the API */
 export function useCanvasData(ontologyId: string) {
   const { setNodes, setEdges } = useCanvasStore();
-  const addToast = useAppStore((s) => s.addToast);
 
   const objectTypesQuery = useQuery({
     queryKey: objectTypesKey(ontologyId),
@@ -83,7 +82,6 @@ export function useCanvasData(ontologyId: string) {
     hydrateCanvas,
     isLoading: objectTypesQuery.isLoading || relationshipsQuery.isLoading,
     isError: objectTypesQuery.isError || relationshipsQuery.isError,
-    addToast,
   };
 }
 

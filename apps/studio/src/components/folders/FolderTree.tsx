@@ -143,15 +143,12 @@ export default function FolderTree({
 }: FolderTreeProps) {
   const { currentFolderId, setCurrentFolder } = useAppStore();
   const foldersQuery = useFolders(spaceId);
-  const [createChildFor, setCreateChildFor] = useState<string | null>(null);
-
   const tree = React.useMemo(
     () => buildTree(foldersQuery.data ?? [], null, ontologiesByFolder),
     [foldersQuery.data, ontologiesByFolder],
   );
 
   const handleCreateChild = (parentId: string) => {
-    setCreateChildFor(parentId);
     onCreateFolder(parentId);
   };
 

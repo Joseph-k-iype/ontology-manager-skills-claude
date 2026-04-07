@@ -41,10 +41,10 @@ export default function TopBar() {
       {/* Right actions */}
       <div className="flex items-center gap-1">
         <button className="p-1.5 rounded-md text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors">
-          <Search className="h-4.5 w-4.5" />
+          <Search className="h-4 w-4" />
         </button>
         <button className="p-1.5 rounded-md text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors">
-          <Bell className="h-4.5 w-4.5" />
+          <Bell className="h-4 w-4" />
         </button>
         <div className="ml-2 h-7 w-7 rounded-full bg-primary-600 flex items-center justify-center text-white text-xs font-semibold select-none">
           U

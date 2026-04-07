@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import structlog
-from python_ulid import ULID
+from ulid import ULID
 
 from core.exceptions import NotFoundError, OPADenyError
 from db.falkordb import META_GRAPH, execute_cypher

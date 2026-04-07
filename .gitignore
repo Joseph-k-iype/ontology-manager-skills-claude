@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+uv.lock
+
+# Node
+node_modules/
+.pnpm-store/
+dist/
+
+# Env
+.env
+.env.local
+
+# Editor
+.DS_Store
+*.swp

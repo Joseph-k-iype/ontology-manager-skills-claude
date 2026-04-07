@@ -502,3 +502,132 @@ async def push_data_to_opa(
   run: |
     eom check-naming --opa-bundle .eom/opa-policies/
 ```
+
+---
+
+## Hierarchy Permission Cascade
+
+Permissions in EOM cascade top-down through the resource hierarchy:
+
+```
+Space → Folder → Ontology → ObjectType → Property
+```
+
+A permission defined on a parent resource is automatically inherited by all
+child resources. A child-level permission **overrides** the inherited parent
+permission for the same subject.
+
+### FalkorDB Traversal — Fetch Inherited Permissions
+
+```cypher
+-- Get all permissions for a resource, including inherited from ancestors
+MATCH (child {id: $resource_id})-[:BELONGS_TO*1..4]->(parent)
+MATCH (perm:OntMeta_Permission)-[:APPLIES_TO]->(parent)
+WHERE perm.subject_id = $subject_id
+RETURN perm.actions       AS actions,
+       perm.policy_type   AS policy_type,
+       perm.abac_condition AS abac_condition,
+       parent.id          AS source_resource_id,
+       labels(parent)     AS source_resource_type,
+       length((child)-[:BELONGS_TO*]->(parent)) AS depth
+ORDER BY depth ASC  -- closest ancestor first (lower depth = more specific)
+
+UNION
+
+-- Also return direct permissions on the resource itself (depth 0)
+MATCH (perm:OntMeta_Permission)-[:APPLIES_TO]->(resource {id: $resource_id})
+WHERE perm.subject_id = $subject_id
+RETURN perm.actions, perm.policy_type, perm.abac_condition,
+       resource.id AS source_resource_id,
+       labels(resource) AS source_resource_type,
+       0 AS depth
+ORDER BY depth ASC
+```
+
+### Override Rule
+
+The **most specific** (lowest depth) permission wins. Direct permissions
+on a resource always override inherited permissions from ancestors.
+
+```python
+def resolve_effective_permissions(
+    rows: list[dict],
+) -> list[str]:
+    """Return the most specific permission's actions."""
+    if not rows:
+        return []
+    # rows are already ordered ASC by depth; first row is most specific
+    return rows[0]["actions"]
+```
+
+### OPA Input — Full Permission Chain as Context
+
+When calling OPA, pass the full resolved chain so policies can express
+attribute-based rules against any ancestor:
+
+```python
+opa_input = {
+    "user": {
+        "id": user_id,
+        "roles": user_roles,
+        "attributes": user_attributes,   # dept, clearance, etc.
+    },
+    "action": action,                    # "READ" | "WRITE" | "EDIT" | "DELETE"
+    "resource": {
+        "type": resource_type,
+        "id": resource_id,
+    },
+    "permission_chain": [
+        {
+            "source_resource_id": row["source_resource_id"],
+            "source_resource_type": row["source_resource_type"],
+            "actions": row["actions"],
+            "policy_type": row["policy_type"],
+            "abac_condition": row["abac_condition"],
+            "depth": row["depth"],
+        }
+        for row in permission_rows
+    ],
+}
+```
+
+### Rego — Cascade Evaluation
+
+```rego
+package eom.access
+
+import future.keywords.if
+import future.keywords.in
+
+# Allow if the most specific permission in the chain grants the action
+default allow := false
+
+allow if {
+    chain := input.permission_chain
+    count(chain) > 0
+    # Take the entry with minimum depth (most specific)
+    min_depth := min({entry.depth | entry := chain[_]})
+    specific := [e | e := chain[_]; e.depth == min_depth][0]
+    input.action in specific.actions
+    evaluate_policy(specific)
+}
+
+# RBAC: always allow if roles match
+evaluate_policy(entry) if {
+    entry.policy_type == "RBAC"
+}
+
+# ABAC: evaluate the condition string (simplified DSL)
+evaluate_policy(entry) if {
+    entry.policy_type == "ABAC"
+    entry.abac_condition != null
+    abac_passes(entry.abac_condition)
+}
+
+# ABAC DSL — department check
+abac_passes(condition) if {
+    regex.match(`user\.department\s*==\s*"([^"]+)"`, condition)
+    dept := regex.find_n(`"([^"]+)"`, condition, 1)[0]
+    trim(dept, `"`) == input.user.attributes.department
+}
+```

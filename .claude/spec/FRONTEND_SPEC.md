@@ -1178,3 +1178,188 @@ export default defineConfig({
 Initial load total: ~740 KB gzipped.
 With G6 (on first Explore visit): +350 KB, cached by browser thereafter.
 With Three.js (Phase 3, Galaxy): +500 KB, separately cached.
+
+---
+
+## Animation Libraries
+
+### Framer Motion — Page & Component Transitions
+
+Use Framer Motion for all UI-level animations. Keep transitions under 300ms.
+
+**Page transitions** — wrap routes in `AnimatePresence`:
+```tsx
+// App.tsx
+import { AnimatePresence } from 'framer-motion';
+
+<AnimatePresence mode="wait">
+  <Routes location={location} key={location.pathname}>
+    ...
+  </Routes>
+</AnimatePresence>
+```
+
+**Page wrapper** — every page component uses this standard variant:
+```tsx
+const pageVariants = {
+  initial:  { opacity: 0, y: 8 },
+  animate:  { opacity: 1, y: 0, transition: { duration: 0.2 } },
+  exit:     { opacity: 0, y: -8, transition: { duration: 0.15 } },
+};
+
+export default function SpacesPage() {
+  return (
+    <motion.div variants={pageVariants} initial="initial" animate="animate" exit="exit">
+      ...
+    </motion.div>
+  );
+}
+```
+
+**Staggered list entrance** — card grids:
+```tsx
+const container = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.05 } },
+};
+const item = {
+  hidden: { opacity: 0, scale: 0.96 },
+  show:   { opacity: 1, scale: 1, transition: { duration: 0.18 } },
+};
+
+<motion.ul variants={container} initial="hidden" animate="show">
+  {spaces.map(s => (
+    <motion.li key={s.id} variants={item}>
+      <SpaceCard space={s} />
+    </motion.li>
+  ))}
+</motion.ul>
+```
+
+**Modal entrance** — scale + fade:
+```tsx
+const modalVariants = {
+  hidden:  { opacity: 0, scale: 0.95 },
+  visible: { opacity: 1, scale: 1,   transition: { duration: 0.18, ease: 'easeOut' } },
+  exit:    { opacity: 0, scale: 0.95, transition: { duration: 0.12 } },
+};
+```
+
+**Slide-in panel** — right-side property editor on canvas:
+```tsx
+const panelVariants = {
+  hidden:  { x: '100%', opacity: 0 },
+  visible: { x: 0,      opacity: 1, transition: { type: 'spring', stiffness: 300, damping: 30 } },
+  exit:    { x: '100%', opacity: 0, transition: { duration: 0.2 } },
+};
+```
+
+---
+
+### GSAP — Complex Timeline Animations
+
+Use GSAP for animations that require precise sequencing, canvas transitions,
+or effects that Framer Motion can't express cleanly.
+
+**Sidebar expand/collapse** — smooth height tween:
+```tsx
+import { gsap } from 'gsap';
+
+const toggleFolder = (el: HTMLElement, open: boolean) => {
+  gsap.to(el, {
+    height:   open ? 'auto' : 0,
+    opacity:  open ? 1 : 0,
+    duration: 0.22,
+    ease:     'power2.inOut',
+  });
+};
+```
+
+**Canvas node entrance** — stagger nodes on first load:
+```tsx
+import { gsap } from 'gsap';
+
+useEffect(() => {
+  gsap.from('.react-flow__node', {
+    scale:    0.8,
+    opacity:  0,
+    duration: 0.3,
+    stagger:  0.04,
+    ease:     'back.out(1.4)',
+  });
+}, []);
+```
+
+**Rule:** GSAP is only for DOM refs and canvas elements. Never use GSAP
+on React-controlled state — use Framer Motion for those.
+
+---
+
+### Lucide React — Icon Conventions
+
+All icons come from `lucide-react`. Never import from any other icon library.
+
+| Use case | Icon | Import |
+|---|---|---|
+| Space | `Globe` / `Lock` | `import { Globe } from 'lucide-react'` |
+| Folder | `Folder` / `FolderOpen` | |
+| Ontology | `BookOpen` | |
+| Object type | `Box` | |
+| Property | `Tag` | |
+| Relationship | `ArrowRight` | |
+| Add / Create | `Plus` | |
+| Delete | `Trash2` | |
+| Edit | `Pencil` | |
+| Publish | `Upload` | |
+| Export | `Download` | |
+| Settings | `Settings` | |
+| Search | `Search` | |
+| Chevrons | `ChevronRight` / `ChevronDown` | |
+| Close | `X` | |
+| Check | `Check` | |
+| Warning | `AlertTriangle` | |
+
+Standard sizing:
+```tsx
+<Plus className="w-4 h-4" />          // inline buttons
+<BookOpen className="w-5 h-5" />       // sidebar items
+<Globe className="w-8 h-8" />          // hero / empty states
+```
+
+---
+
+### Recharts — Ontology Health Dashboard
+
+Use Recharts for all data visualisation. Import only the components you need.
+
+**Ontology health bar chart:**
+```tsx
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer,
+} from 'recharts';
+
+<ResponsiveContainer width="100%" height={200}>
+  <BarChart data={healthData}>
+    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+    <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+    <YAxis tick={{ fontSize: 12 }} />
+    <Tooltip />
+    <Bar dataKey="score" fill="#6366f1" radius={[4, 4, 0, 0]} />
+  </BarChart>
+</ResponsiveContainer>
+```
+
+**Object type property count sparkline:**
+```tsx
+import { LineChart, Line, ResponsiveContainer } from 'recharts';
+
+<ResponsiveContainer width={80} height={30}>
+  <LineChart data={trend}>
+    <Line type="monotone" dataKey="count" stroke="#6366f1" dot={false} strokeWidth={2} />
+  </LineChart>
+</ResponsiveContainer>
+```
+
+**Rule:** All charts live in `src/components/charts/`. Never put chart code
+directly in page components.
